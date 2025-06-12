@@ -333,7 +333,19 @@ def train(rank, gpu, args):
             train=True,
             transform=train_transform,
         )
-
+        
+    elif args.dataset == "acm":
+        from datasets_prep.acm_at import ACMMatrixDataset
+        train_transform = transforms.Compose([
+            transforms.ToTensor()
+        ])
+        dataset = ACMMatrixDataset("./datasets/ACM.mat/matrix.mat","ACM",2700,train_transform)
+        
+    else:
+        raise ValueError(f"{args.dataset} not available dataset")
+    
+    import torch.utils.data
+    import torch.utils.data.distributed
     train_sampler = torch.utils.data.distributed.DistributedSampler(
         dataset, num_replicas=args.world_size, rank=rank
     )
@@ -699,7 +711,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--exp", default="experiment_cifar_default", help="name of experiment"
     )
-    parser.add_argument("--dataset", default="cifar10", help="name of dataset")
+    parser.add_argument("--dataset", default="acm", help="name of dataset")
     parser.add_argument("--nz", type=int, default=100)
     parser.add_argument("--num_timesteps", type=int, default=4)
 
