@@ -62,6 +62,8 @@ class NCSNpp(nn.Module):
 
   def __init__(self, config):
     super().__init__()
+    
+    # 解析初始化模型配置
     self.config = config
     self.not_use_tanh = config.not_use_tanh
     self.act = act = nn.SiLU()
@@ -91,7 +93,10 @@ class NCSNpp(nn.Module):
     combine_method = config.progressive_combine.lower()
     combiner = functools.partial(Combine, method=combine_method)
 
+    # 模型实现
     modules = []
+    # 时间编码部分/位置编码部分
+    # 高斯傅里叶投影嵌入
     # timestep/noise_level embedding; only for continuous training
     if embedding_type == 'fourier':
       # Gaussian Fourier features embeddings.
@@ -101,13 +106,14 @@ class NCSNpp(nn.Module):
         embedding_size=nf, scale=config.fourier_scale
       ))
       embed_dim = 2 * nf
-
+    # 位置嵌入
     elif embedding_type == 'positional':
       embed_dim = nf
 
     else:
       raise ValueError(f'embedding type {embedding_type} unknown.')
 
+    # conditional 扩散模型，添加输入线性层
     if conditional:
       modules.append(nn.Linear(embed_dim, nf * 4))
       modules[-1].weight.data = default_initializer()(modules[-1].weight.shape)
@@ -116,28 +122,34 @@ class NCSNpp(nn.Module):
       modules[-1].weight.data = default_initializer()(modules[-1].weight.shape)
       nn.init.zeros_(modules[-1].bias)
 
+    # 注意力层-预制件
     AttnBlock = functools.partial(layerspp.AttnBlockpp,
                                   init_scale=init_scale,
                                   skip_rescale=skip_rescale)
 
+    # 上采样层-预制件
     Upsample = functools.partial(layerspp.Upsample,
                                  with_conv=resamp_with_conv, fir=fir, fir_kernel=fir_kernel)
 
+    # 上采样递增模式-预制件
     if progressive == 'output_skip':
       self.pyramid_upsample = layerspp.Upsample(fir=fir, fir_kernel=fir_kernel, with_conv=False)
     elif progressive == 'residual':
       pyramid_upsample = functools.partial(layerspp.Upsample,
                                            fir=fir, fir_kernel=fir_kernel, with_conv=True)
 
+    # 下采样层-预制件
     Downsample = functools.partial(layerspp.Downsample,
                                    with_conv=resamp_with_conv, fir=fir, fir_kernel=fir_kernel)
 
+    # 下采样递减模式-预制件
     if progressive_input == 'input_skip':
       self.pyramid_downsample = layerspp.Downsample(fir=fir, fir_kernel=fir_kernel, with_conv=False)
     elif progressive_input == 'residual':
       pyramid_downsample = functools.partial(layerspp.Downsample,
                                              fir=fir, fir_kernel=fir_kernel, with_conv=True)
 
+    # 残差连接块类型-预制件
     if resblock_type == 'ddpm':
       ResnetBlock = functools.partial(ResnetBlockDDPM,
                                       act=act,
@@ -177,21 +189,24 @@ class NCSNpp(nn.Module):
     if progressive_input != 'none':
       input_pyramid_ch = channels
 
+    # 输入部分，3x3 卷积层
     modules.append(conv3x3(channels, nf))
     hs_c = [nf]
 
     in_ch = nf
+    # 各个层的维度，每个层内有 `num_res_blocks`个残差连接块
     for i_level in range(num_resolutions):
       # Residual blocks for this resolution
       for i_block in range(num_res_blocks):
         out_ch = nf * ch_mult[i_level]
         modules.append(ResnetBlock(in_ch=in_ch, out_ch=out_ch))
         in_ch = out_ch
-
+        # 如果到达指定的注意力尺寸，添加注意力层
         if all_resolutions[i_level] in attn_resolutions:
           modules.append(AttnBlock(channels=in_ch))
         hs_c.append(in_ch)
 
+      # 未到达下采样最后一层，添加下采样层
       if i_level != num_resolutions - 1:
         if resblock_type == 'ddpm':
           modules.append(Downsample(in_ch=in_ch))
@@ -209,6 +224,7 @@ class NCSNpp(nn.Module):
 
         hs_c.append(in_ch)
 
+    # 下采样部分结束，到达U-net 中间
     in_ch = hs_c[-1]
     modules.append(ResnetBlock(in_ch=in_ch))
     modules.append(AttnBlock(channels=in_ch))
@@ -217,6 +233,7 @@ class NCSNpp(nn.Module):
     pyramid_ch = 0
     # Upsampling block
     for i_level in reversed(range(num_resolutions)):
+      # 上采样部分，残差块比下采样多1
       for i_block in range(num_res_blocks + 1):
         out_ch = nf * ch_mult[i_level]
         modules.append(ResnetBlock(in_ch=in_ch + hs_c.pop(),
@@ -226,6 +243,7 @@ class NCSNpp(nn.Module):
       if all_resolutions[i_level] in attn_resolutions:
         modules.append(AttnBlock(channels=in_ch))
 
+      # 基于递减模式添加模块
       if progressive != 'none':
         if i_level == num_resolutions - 1:
           if progressive == 'output_skip':
@@ -252,6 +270,7 @@ class NCSNpp(nn.Module):
           else:
             raise ValueError(f'{progressive} is not a valid name')
 
+      # 非终末层，添加上采样模块
       if i_level != 0:
         if resblock_type == 'ddpm':
           modules.append(Upsample(in_ch=in_ch))
@@ -267,7 +286,7 @@ class NCSNpp(nn.Module):
 
     self.all_modules = nn.ModuleList(modules)
     
-    
+    # 收尾部分
     mapping_layers = [PixelNorm(),
                       dense(config.nz, z_emb_dim),
                       self.act,]
@@ -278,6 +297,16 @@ class NCSNpp(nn.Module):
     
 
   def forward(self, x, time_cond, z):
+    """GAN正向过程
+
+    Args:
+        x (_type_): 输入的带噪声的图像
+        time_cond (_type_): 扩散模型的时间信息
+        z (_type_): 正态分布噪声
+
+    Returns:
+        _type_: 模型还原图像
+    """
     # timestep/noise_level embedding; only for continuous training
     zemb = self.z_transform(z)
     modules = self.all_modules
