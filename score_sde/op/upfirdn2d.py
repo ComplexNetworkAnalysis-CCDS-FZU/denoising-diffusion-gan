@@ -2,7 +2,7 @@
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 # ---------------------------------------------------------------
 
-""" Originated from https://github.com/rosinality/stylegan2-pytorch
+"""Originated from https://github.com/rosinality/stylegan2-pytorch
 The license for the original version of this file can be found in this directory (LICENSE_MIT).
 """
 
@@ -29,7 +29,6 @@ class UpFirDn2dBackward(Function):
     def forward(
         ctx, grad_output, kernel, grad_kernel, up, down, pad, g_pad, in_size, out_size
     ):
-
         up_x, up_y = up
         down_x, down_y = down
         g_pad_x0, g_pad_x1, g_pad_y0, g_pad_y1 = g_pad
@@ -69,7 +68,7 @@ class UpFirDn2dBackward(Function):
 
     @staticmethod
     def backward(ctx, gradgrad_input):
-        kernel, = ctx.saved_tensors
+        (kernel,) = ctx.saved_tensors
 
         gradgrad_input = gradgrad_input.reshape(-1, ctx.in_size[2], ctx.in_size[3], 1)
 
@@ -163,6 +162,7 @@ def upfirdn2d(input, kernel, up=1, down=1, pad=(0, 0)):
 
     return out
 
+
 def upfirdn2d_ada(input, kernel, up=1, down=1, pad=(0, 0)):
     if not isinstance(up, abc.Iterable):
         up = (up, up)
@@ -180,6 +180,7 @@ def upfirdn2d_ada(input, kernel, up=1, down=1, pad=(0, 0)):
         out = UpFirDn2d.apply(input, kernel, up, down, pad)
 
     return out
+
 
 def upfirdn2d_native(
     input, kernel, up_x, up_y, down_x, down_y, pad_x0, pad_x1, pad_y0, pad_y1

@@ -116,7 +116,6 @@ class Diffusion_Coefficients:
     """扩散模型系数"""
 
     def __init__(self, args, device):
-
         self.sigmas, self.a_s, _ = get_sigma_schedule(args, device=device)
 
         self.a_s_cum = np.cumprod(self.a_s.cpu())
@@ -179,7 +178,6 @@ def q_sample_pairs(coeff, x_start, t):
 # %% posterior sampling
 class Posterior_Coefficients:
     def __init__(self, args, device):
-
         _, _, self.betas = get_sigma_schedule(args, device=device)
 
         # we don't need the zeros
@@ -219,7 +217,6 @@ class Posterior_Coefficients:
 
 
 def sample_posterior(coefficients, x_0, x_t, t):
-
     def q_posterior(x_0, x_t, t):
         mean = (
             extract(coefficients.posterior_mean_coef1, t, x_t.shape) * x_0
@@ -299,7 +296,6 @@ def train(rank, gpu, args):
         )
 
     elif args.dataset == "lsun":
-
         train_transform = transforms.Compose(
             [
                 transforms.Resize(args.image_size),
@@ -333,19 +329,21 @@ def train(rank, gpu, args):
             train=True,
             transform=train_transform,
         )
-        
+
     elif args.dataset == "acm":
         from datasets_prep.acm_at import ACMMatrixDataset
-        train_transform = transforms.Compose([
-            transforms.ToTensor()
-        ])
-        dataset = ACMMatrixDataset("./datasets/ACM.mat/matrix.mat","ACM",2700,train_transform)
-        
+
+        train_transform = transforms.Compose([transforms.ToTensor()])
+        dataset = ACMMatrixDataset(
+            "./datasets/ACM.mat/matrix.mat", "ACM", 2700, train_transform
+        )
+
     else:
         raise ValueError(f"{args.dataset} not available dataset")
-    
+
     import torch.utils.data
     import torch.utils.data.distributed
+
     train_sampler = torch.utils.data.distributed.DistributedSampler(
         dataset, num_replicas=args.world_size, rank=rank
     )
@@ -543,7 +541,6 @@ def train(rank, gpu, args):
                     )
 
         if not args.no_lr_decay:
-
             schedulerG.step()
             schedulerD.step()
 
